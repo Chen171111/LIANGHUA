@@ -16,10 +16,18 @@ _AK_SYMBOL_MAP = {
     "000905.SH": "sh000905",  # 中证500
     "000852.SH": "sh000852",  # 中证1000
     "000016.SH": "sh000016",  # 上证50
+    "000688.SH": "sh000688",  # 科创50
     "000922.SH": "sh000922",  # 中证红利
     "399006.SZ": "sz399006",  # 创业板指
     "399324.SZ": "sz399324",  # 深证红利
     "399997.SZ": "sz399997",  # 中证白酒
+    "399989.SZ": "sz399989",  # 中证医疗
+    "399967.SZ": "sz399967",  # 中证军工
+    "399986.SZ": "sz399986",  # 中证银行
+    "399808.SZ": "sz399808",  # 中证新能源
+    "399673.SZ": "sz399673",  # 创业板50
+    "399005.SZ": "sz399005",  # 中小100
+    "399975.SZ": "sz399975",  # 中证全指证券公司
 }
 
 _OCCL = {"vol": "volume", "日期": "date", "开盘": "open", "最高": "high",
@@ -41,13 +49,32 @@ def classify_code(code: str) -> str:
 
 
 def to_ak_symbol(code: str) -> str:
-    """指数代码 -> akshare symbol。"""
+    """指数代码 -> akshare symbol（优先用交易所后缀判定，规避段位歧义）。"""
     code_up = code.upper()
     if code_up in _AK_SYMBOL_MAP:
         return _AK_SYMBOL_MAP[code_up]
-    base = code_up.split(".")[0]
-    market = "sh" if base.startswith(("6", "5", "11", "13", "9")) else "sz"
-    return "{}{}".format(market, base)
+    parts = code_up.split(".")
+    base, market = parts[0], (parts[1] if len(parts) > 1 else None)
+    if market == "SH":
+        market_pfx = "sh"
+    elif market == "SZ":
+        market_pfx = "sz"
+    else:
+        market_pfx = "sh" if base.startswith(("6", "5", "9", "11", "13", "688", "000")) else "sz"
+    return "{}{}".format(market_pfx, base)
+
+
+# ===== 推荐标的池（高分化，横截面/轮动空间更大） =====
+RECOMMENDED_POOLS = {
+    # 宽基 + 风格
+    "宽基成长": ["000300.SH", "000905.SH", "000852.SH", "000688.SH", "399006.SZ",
+                 "399673.SZ", "399005.SZ"],
+    # 行业主题（趋势分化大，适合行业轮动）
+    "行业轮动": ["399997.SZ", "399989.SZ", "399967.SZ", "399986.SZ",
+                 "399808.SZ", "000688.SH", "399673.SZ", "399975.SZ"],
+    # 默认温和
+    "default": ["000300.SH", "000905.SH", "399006.SZ", "399324.SZ"],
+}
 
 
 def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:

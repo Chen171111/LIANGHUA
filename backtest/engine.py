@@ -39,13 +39,42 @@ class BacktestEngine:
 
     def __init__(self, panel, factors: Dict[str, pd.DataFrame],
                  strategy, cost: dict = None, init_cash=1_000_000.0,
-                 benchmark=None, benchmark_yoy=0.0):
+                 benchmark=None, benchmark_yoy=0.0,
+                 timing=None, timing_window=20, timing_scale_off=0.3):
         self.panel = panel
         self.factors = factors
         self.strategy = strategy
         self.acc = PortfolioAccount(init_cash, cost or {})
         self.benchmark = benchmark    # Series(date→close) 基准收盘
         self.benchmark_yoy = benchmark_yoy
+        # 大盘择时：None 关闭；"ma20" 用基准收盘与 MA20 的相对位置
+        self.timing = timing
+        self.timing_window = timing_window
+        self.timing_scale_off = timing_scale_off
+        self._timing_ma = None
+        self._timing_mom = None
+        if timing and benchmark is not None and len(benchmark) > timing_window:
+            bc = benchmark.dropna()
+            if timing == "ma20":
+                self._timing_ma = bc.rolling(timing_window).mean()
+            elif timing == "abs_mom":
+                self._timing_mom = bc / bc.shift(timing_window) - 1
+
+    def _timing_scale(self, date) -> float:
+        """大盘择时仓位系数：满仓 1.0；弱势按 timing_scale_off 减仓。"""
+        if self._timing_ma is None and self._timing_mom is None:
+            return 1.0
+        if self._timing_ma is not None:
+            c = self._timing_ma.get(date)
+            if c is None or c != c:      # 无数据/NA 不择时
+                return 1.0
+            return 1.0 if self.benchmark.get(date, 0) > c else self.timing_scale_off
+        if self._timing_mom is not None:
+            c = self._timing_mom.get(date)
+            if c is None or c != c:
+                return 1.0
+            return 1.0 if c > 0 else self.timing_scale_off
+        return 1.0
 
     def run(self) -> BacktestResult:
         dates = self.panel.dates
@@ -65,9 +94,12 @@ class BacktestEngine:
             rates = {c: (r if r == r else 0.0) for c, r in rates_series.items()}
             self.acc.update(date, rates)
 
-            # 2) 生成信号并再平衡
+            # 2) 生成信号并再平衡（叠加可选的大盘择时仓位）
             weights = self.strategy.generate_weights(date, self.factors, self.panel)
             if weights is not None and weights:
+                scale = self._timing_scale(date)
+                if scale < 1.0:
+                    weights = {c: w * scale for c, w in weights.items()}
                 self.acc.rebalance(weights)
 
             holdings[date] = self.acc.holding()

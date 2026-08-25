@@ -22,6 +22,10 @@ def run_backtest(
     strategy_params: Optional[dict] = None,
     benchmark: Optional[str] = None,
     data_root=None,
+    pool: Optional[str] = None,
+    timing: Optional[str] = None,
+    timing_window: int = 20,
+    timing_scale_off: float = 0.3,
 ) -> dict:
     """
     一键回测：数据下载/缓存 → 构建面板 → 计算因子 → 策略 → 回测 → 绩效 → 报告。
@@ -41,6 +45,11 @@ def run_backtest(
     dict: {result(BacktestResult), metrics, equity, html, meta}
     """
     cost = cost or backtest_config(init_cash=init_cash)
+    # 若指定推荐池名称，用其替换/兜底标的列表
+    if pool:
+        from .dataprovider.store import RECOMMENDED_POOLS
+        if pool in RECOMMENDED_POOLS:
+            codes = list(RECOMMENDED_POOLS[pool])
     store = DataStore(
         index_dir=str(DEFAULT_CONFIG.index_dir) if data_root is None else str(data_root / "indexes"),
         stock_dir=str(DEFAULT_CONFIG.stock_dir) if data_root is None else str(data_root / "stocks"),
@@ -66,7 +75,8 @@ def run_backtest(
 
     engine = BacktestEngine(
         panel, factors, strat, cost=cost, init_cash=init_cash,
-        benchmark=bench_close,
+        benchmark=bench_close, timing=timing, timing_window=timing_window,
+        timing_scale_off=timing_scale_off,
     )
     result = engine.run()
 
