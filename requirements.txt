@@ -1,0 +1,10 @@
+# ===== AI 量化研投平台 quantplatform 依赖 =====
+# 核心
+numpy>=1.26
+pandas>=2.0
+# 数据引擎（免费行情，指数/个股）
+akshare>=1.12
+
+# Web Dashboard / API
+fastapi>=0.100
+uvicorn>=0.23

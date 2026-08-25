@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 量化研投平台</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+:root{--primary:#2b3a67;--red:#d1381f;--green:#1ea672;--bg:#f5f7fb;}
+*{box-sizing:border-box}
+body{font-family:Segoe UI,PingFang SC,Microsoft YaHei,sans-serif;margin:0;background:var(--bg);color:#333}
+header{background:linear-gradient(135deg,#2b3a67,#3b4f8f);color:#fff;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+header h1{margin:0;font-size:20px} header .sub{font-size:12px;opacity:.85;margin-top:2px}
+header .ver{font-size:12px;background:rgba(255,255,255,.15);padding:4px 10px;border-radius:20px}
+.wrap{max-width:1280px;margin:0 auto;padding:18px}
+.panel{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:#666}
+.field input,.field select{height:34px;padding:0 10px;border:1px solid #d4d8e0;border-radius:8px;width:180px;font-size:13px}
+.field.wide input{width:280px}
+.btn{height:34px;padding:0 18px;border:none;border-radius:8px;background:var(--primary);color:#fff;cursor:pointer;font-size:14px}
+.btn[disabled]{opacity:.6;cursor:not-allowed}
+.msg{font-size:12px;color:var(--red);margin-top:8px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}
+.card{background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:3px solid var(--primary)}
+.card .k{font-size:11px;color:#888}.card .v{font-size:20px;font-weight:600}
+.v.up{color:var(--green)}.v.dn{color:var(--red)}
+.cgrid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-top:14px}
+.cgrid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.chart{background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.chart h3{margin:4px 8px;font-size:14px;color:#444}.chart .box{height:300px}
+@media(max-width:900px){.cgrid,.cgrid2{grid-template-columns:1fr}}
+.loading{opacity:.5;pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>AI 量化研投平台</h1><div class="sub">数据 / 因子 / 多策略 / 回测 / 绩效 Dashboard</div></div>
+  <div class="ver">quantplatform v0.1</div>
+</header>
+<div class="wrap">
+  <div class="panel">
+    <div class="controls">
+      <div class="field wide"><label>标的代码（逗号分隔，指数/个股均可）</label>
+        <input id="codes" value="000300.SH,399006.SZ,399324.SZ,000905.SH"></div>
+      <div class="field"><label>策略</label><select id="strategy"></select></div>
+      <div class="field"><label>起始</label><input id="start" placeholder="YYYYMMDD" value="20150101"></div>
+      <div class="field"><label>结束</label><input id="end" placeholder="YYYYMMDD" value="20241231"></div>
+      <div class="field"><label>持仓数 TopK</label><input id="topk" type="number" value="3" style="width:80px"></div>
+      <div class="field"><label>调仓周期</label><input id="rebalance" type="number" value="5" style="width:80px"></div>
+      <button class="btn" id="run">运行回测</button>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="cards" id="cards"></div>
+  </div>
+  <div class="cgrid">
+    <div class="chart"><h3>净值曲线（策略 vs 基准）</h3><div class="box" id="c_eq"></div></div>
+    <div class="chart"><h3>回撤曲线</h3><div class="box" id="c_dd"></div></div>
+  </div>
+  <div class="cgrid2">
+    <div class="chart"><h3>月度收益(%)</h3><div class="box" id="c_m"></div></div>
+    <div class="chart"><h3>持仓构成（近15个调仓日）</h3><div class="box" id="c_hold"></div></div>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+async function loadStrategies(){const r=await fetch('/api/strategies');const j=await r.json();
+  const s=$('strategy');s.innerHTML=j.strategies.map(n=>`<option>${n}</option>`).join('');}
+async function runBacktest(){
+  const btn=$('run');btn.disabled=true;document.querySelector('.wrap').classList.add('loading');
+  $('msg').textContent='回测中，请稍候…';
+  const q=new URLSearchParams();q.set('codes',$('codes').value);q.set('strategy',$('strategy').value);
+  q.set('start',$('start').value);q.set('end',$('end').value);q.set('topk',$('topk').value);q.set('rebalance',$('rebalance').value);
+  try{
+    const r=await fetch('/api/backtest?'+q.toString());const j=await r.json();
+    if(j.error){$('msg').textContent='错误：'+j.message;return;}
+    render(j.data);
+  }catch(e){$('msg').textContent='请求失败：'+e;}finally{btn.disabled=false;document.querySelector('.wrap').classList.remove('loading');}
+}
+function render(d){
+  $('msg').textContent='';
+  const cm=d.metrics,pos=arr=>arr.map((v,i)=>[d.dates[i],v]);
+  const orders=[['累计收益','%'],['年化收益','%'],['夏普比率',''],['最大回撤','%'],['年化波动率','%'],['Calmar',''],['胜率','']];
+  let cards='';orders.forEach(function(kv){const k=kv[0],fmt=kv[1];let v=cm[k];if(v===undefined)return;
+    const s=(v*((fmt==='%')?100:1)).toFixed(2)+(fmt==='%'?'%':'');cards+=`<div class="card"><div class="k">${k}</div><div class="v ${v<0?'dn':'up'}">${s}</div></div>`;});
+  $('cards').innerHTML=cards;
+  echarts.init($('c_eq')).setOption({tooltip:{trigger:'axis'},legend:{data:['策略','基准']},grid:{left:50,right:16,top:30,bottom:30},
+    xAxis:{type:'category',data:d.dates},yAxis:{type:'value',scale:true},
+    series:[{name:'策略',type:'line',showSymbol:false,data:pos(d.equity),lineStyle:{color:'#2b3a67',width:2}},
+            {name:'基准',type:'line',showSymbol:false,data:d.benchmark?pos(d.benchmark):[],lineStyle:{color:'#1ea672',width:1.5,type:'dashed'}}]});
+  const eq=d.equity;let pk=eq[0];const dd=eq.map(function(v){pk=Math.max(pk,v);return (v/pk-1)*100;});
+  echarts.init($('c_dd')).setOption({grid:{left:50,right:16,top:30,bottom:30},xAxis:{type:'category',data:d.dates},yAxis:{type:'value',value:0},
+    series:[{type:'line',showSymbol:false,data:pos(dd),areaStyle:{color:'rgba(209,56,31,.22)'},lineStyle:{color:'#d1381f',width:1.5}}]});
+  echarts.init($('c_m')).setOption({grid:{left:50,right:16,top:20,bottom:60},xAxis:{type:'category',data:d.monthly.labels,axisLabel:{rotate:45,interval:1}},
+    yAxis:{type:'value',value:0},tooltip:{trigger:'axis'},
+    series:[{type:'bar',data:d.monthly.values,itemStyle:{color:function(p){return p.value>=0?'#d1381f':'#1ea672';}}}]});
+  const hd=d.holdings.slice(-15).reverse();const codes=[];
+  hd.forEach(function(h){h.codes.forEach(function(c){if(codes.indexOf(c)<0)codes.push(c);});});const top=codes.slice(0,8);
+  const hdata=hd.map(function(h){return top.map(function(c){return h.codes.indexOf(c)>=0?1:0;});});
+  echarts.init($('c_hold')).setOption({grid:{left:80,right:16,top:20,bottom:60},tooltip:{},
+    xAxis:{type:'category',data:hd.map(function(h){return h.date;}),axisLabel:{interval:1,rotate:45}},
+    yAxis:{type:'category',data:top},visualMap:{min:0,max:1,show:false},
+    series:[{type:'heatmap',data:hd.map(function(h,i){return top.map(function(c,j){return [i,j,hdata[i][j]];});}).flat()}]});
+}
+loadStrategies();$('run').onclick=runBacktest;runBacktest();
+</script>
+</body>
+</html>
