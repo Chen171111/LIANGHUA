@@ -15,7 +15,7 @@ if _VENDOR.exists() and str(_VENDOR) not in sys.path:
 try:
     from fastapi import FastAPI, Query
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, FileResponse
+    from fastapi.responses import HTMLResponse, FileResponse, Response
     import uvicorn
     _HAS_WEB = True
 except ImportError:
@@ -40,6 +40,15 @@ def create_app() -> "FastAPI":
             return FileResponse(str(dash_path))
         return "<h1>AI 量化研投平台</h1><p>未找到 dashboard</p>"
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        # 返回内联 SVG 图标，避免浏览器 404 噪音
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' \
+             b'<rect width="24" height="24" rx="4" fill="#2b3a67"/>' \
+             b'<text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" ' \
+             b'font-family="sans-serif">Q</text></svg>'
+        return Response(content=svg, media_type="image/svg+xml")
+
     @app.get("/api/health")
     def health():
         return {"status": "ok", "strategies": list_strategies()}
@@ -48,7 +57,7 @@ def create_app() -> "FastAPI":
     def strategies():
         return {"strategies": list_strategies()}
 
-    @app.post("/api/backtest")
+    @app.api_route("/api/backtest", methods=["GET", "POST"])
     def backtest(
         codes: str = Query(..., description="标的代码，逗号分隔"),
         strategy: str = Query("multifactor"),

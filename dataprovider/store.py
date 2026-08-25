@@ -63,16 +63,37 @@ def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _download_one(ak, code: str, kind: str) -> pd.DataFrame:
-    """下载单个标的行情，个股走前复权。"""
+    """下载单个标的行情。
+
+    个股优先东财前复权(qfq)，若接口被限流/风控断连则自动回退到新浪(不复权)。
+    """
     if kind == "index":
         df = ak.stock_zh_index_daily(symbol=to_ak_symbol(code))
-    else:
-        df = ak.stock_zh_a_hist(
-            symbol=code.split(".")[0], period="daily",
-            start_date="19900101", end_date="22240101", adjust="qfq")
-    if df is None or df.empty:
-        raise RuntimeError("{} 无数据返回".format(code))
-    return _normalize_ohlcv(df)
+        if df is None or df.empty:
+            raise RuntimeError("{} 无数据返回".format(code))
+        return _normalize_ohlcv(df)
+
+    base = code.split(".")[0]
+    # 1) 东财前复权
+    for adj in ("qfq", ""):
+        try:
+            df = ak.stock_zh_a_hist(symbol=base, period="daily",
+                                    start_date="19900101", end_date="22240101",
+                                    adjust=adj)
+            if df is not None and not df.empty:
+                return _normalize_ohlcv(df)
+        except Exception:
+            continue  # 东财不可用，尝试下一个
+    # 2) 新浪（不复权）兜底
+    try:
+        df = ak.stock_zh_a_daily(symbol=to_ak_symbol(code),
+                                 start_date="19900101", end_date="22240101")
+        if df is not None and not df.empty:
+            print("[DataStore] {} 使用新浪数据源(不复权)".format(code))
+            return _normalize_ohlcv(df)
+    except Exception as e:
+        raise RuntimeError("{} 数据下载失败: {}".format(code, e)) from e
+    raise RuntimeError("{} 无数据".format(code))
 
 
 class DataStore:

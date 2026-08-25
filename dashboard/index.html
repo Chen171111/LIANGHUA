@@ -73,7 +73,7 @@ async function runBacktest(){
   const q=new URLSearchParams();q.set('codes',$('codes').value);q.set('strategy',$('strategy').value);
   q.set('start',$('start').value);q.set('end',$('end').value);q.set('topk',$('topk').value);q.set('rebalance',$('rebalance').value);
   try{
-    const r=await fetch('/api/backtest?'+q.toString());const j=await r.json();
+    const r=await fetch('/api/backtest?'+q.toString(),{method:'POST'});const j=await r.json();
     if(j.error){$('msg').textContent='错误：'+j.message;return;}
     render(j.data);
   }catch(e){$('msg').textContent='请求失败：'+e;}finally{btn.disabled=false;document.querySelector('.wrap').classList.remove('loading');}
