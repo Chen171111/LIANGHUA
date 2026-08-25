@@ -16,11 +16,12 @@ class MomentumStrategy(Strategy):
     def generate_weights(self, date, factors, panel):
         if not self._is_rebalance():
             return None
-        s = self._snapshot(factors, date, self.factor)
-        if s is None or s.empty:
+        # 动量 + 均线趋势 双因子综合打分，取 TopK
+        score = weighted_score(factors, date,
+                               [(self.factor, 1, 1.0), ("sma_gap", 1, 1.0)])
+        if score is None or score.empty:
             return {}
-        scores = rank_snapshot(s, ascending=False)
-        codes = scores.sort_values(ascending=False).head(self.topk).index
+        codes = score.sort_values(ascending=False).head(self.topk).index
         return {c: min(1.0 / max(len(codes), 1) * 0.9, self.max_total) for c in codes}
 
 
@@ -60,6 +61,39 @@ class CrossMovingStrategy(Strategy):
         scores = rank_snapshot(s, ascending=False)
         codes = scores.sort_values(ascending=False).head(self.topk).index
         return {c: min(1.0 / max(len(codes), 1) * 0.9, self.max_total) for c in codes}
+
+
+class LianbanLeadStrategy(Strategy):
+    """连板龙头接力（超短/情绪流思路）。
+
+    每期在池内选出『连板数最高』的标的最多 topk 只持有；
+    情绪门：板块个股当日无涨停则空仓（退潮期不硬做）。
+    类似淘股吧『只做最强/最高板 + 情绪周期择时』的简版量化。
+    """
+
+    name = "lianban_lead"
+
+    def __init__(self, topk=1, min_zt=1, **kw):
+        super().__init__(topk=topk, **kw)
+        self.min_zt = min_zt
+
+    def generate_weights(self, date, factors, panel):
+        if not self._is_rebalance():
+            return None
+        lb = self._snapshot(factors, date, "lianban")
+        zt = self._snapshot(factors, date, "zt_daily")
+        if lb is None or zt is None or lb.empty or zt.empty:
+            return {}
+        # 情绪门：当日涨停家数不足则空仓
+        zt_cnt = int((zt > 0).sum())
+        if zt_cnt < self.min_zt:
+            return {}
+        codes = lb.sort_values(ascending=False).head(self.topk).index.tolist()
+        codes = [c for c in codes if lb.loc[c] > 0]  # 只持有连板中的
+        if not codes:
+            return {}
+        w = min(1.0 / len(codes) * 0.9, self.max_total)
+        return {c: w for c in codes}
 
 
 class MultiFactorStrategy(Strategy):

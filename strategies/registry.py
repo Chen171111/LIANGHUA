@@ -1,12 +1,14 @@
 """策略注册表：按名称创建/列出策略，支持外部注册自定义策略。"""
 from .base import Strategy
-from .builtin import MomentumStrategy, MeanReversionStrategy, CrossMovingStrategy, MultiFactorStrategy
+from .builtin import (MomentumStrategy, MeanReversionStrategy, CrossMovingStrategy,
+                      MultiFactorStrategy, LianbanLeadStrategy)
 
 STRATEGIES = {
     "momentum": MomentumStrategy,
     "mean_reversion": MeanReversionStrategy,
     "cross_moving": CrossMovingStrategy,
     "multifactor": MultiFactorStrategy,
+    "lianban_lead": LianbanLeadStrategy,
 }
 
 

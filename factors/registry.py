@@ -68,6 +68,18 @@ def vol_ratio(px: dict, window=5):
     return v / v.rolling(window).mean()
 
 
+def zt_daily(px: dict, thr: float = 0.098):
+    """当日是否涨停（近似：较前收盘涨幅 ≥ 阈值）。"""
+    return (px["close"].pct_change() >= thr).astype(int)
+
+
+def lianban(px: dict, thr: float = 0.098):
+    """连板数（连续涨停计数，涨停则累加，断板归 0）。"""
+    zt = zt_daily(px, thr)
+    run = zt.cumsum() - zt.cumsum().where(zt == 0).ffill().fillna(0)
+    return run.where(zt > 0, 0)
+
+
 # ---- 注册表 ----
 FACTOR_FUNCS: Dict[str, Callable] = {
     "rsi": lambda px: rsi(px),
@@ -78,6 +90,8 @@ FACTOR_FUNCS: Dict[str, Callable] = {
     "boll_pos": lambda px: boll_pos(px),
     "momentum20": lambda px: momentum(px, 20),
     "vol_ratio": lambda px: vol_ratio(px),
+    "zt_daily": lambda px: zt_daily(px),
+    "lianban": lambda px: lianban(px),
 }
 
 

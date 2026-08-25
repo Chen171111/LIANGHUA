@@ -57,9 +57,18 @@ def create_app() -> "FastAPI":
     def strategies():
         return {"strategies": list_strategies()}
 
+    @app.get("/api/pools")
+    def pools():
+        from ..dataprovider.store import RECOMMENDED_POOLS, fetch_index_cons_sample
+        items = [{"name": k, "codes": v} for k, v in RECOMMENDED_POOLS.items()]
+        items.append({"name": "个股动量", "codes": fetch_index_cons_sample(n=20)})
+        # 仅注册这些；额外指标池可再加
+        return {"pools": [i for i in items],
+                "strategies": list_strategies()}
+
     @app.api_route("/api/backtest", methods=["GET", "POST"])
     def backtest(
-        codes: str = Query(..., description="标的代码，逗号分隔"),
+        codes: str = Query(None, description="标的代码，逗号分隔(与 pool 二选一)"),
         strategy: str = Query("multifactor"),
         start: str = Query(None, description="YYYYMMDD"),
         end: str = Query(None, description="YYYYMMDD"),
@@ -67,13 +76,20 @@ def create_app() -> "FastAPI":
         rebalance: int = Query(5),
         init_cash: float = Query(1_000_000.0),
         benchmark: str = Query(None),
+        timing: str = Query(None, description="择时: ma20/abs_mom/rsrs"),
+        pool: str = Query(None, description="推荐池名称(可替代 codes)"),
     ):
         try:
-            code_list = [c.strip() for c in codes.split(",") if c.strip()]
+            code_list = [c.strip() for c in codes.split(",") if c.strip()] if codes else []
+            ss = {"topk": topk, "rebalance_every": rebalance}
+            # 连板龙头策略需要额外参数
+            if strategy == "lianban_lead":
+                ss["min_zt"] = 1
             pipe = run_backtest(
                 codes=code_list, strategy=strategy, start=start, end=end,
                 init_cash=init_cash, benchmark=benchmark,
-                strategy_params={"topk": topk, "rebalance_every": rebalance},
+                pool=pool or None, timing=timing or None,
+                strategy_params=ss,
             )
             result = pipe["result"]
             payload = result.to_dict()

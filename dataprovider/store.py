@@ -76,6 +76,29 @@ RECOMMENDED_POOLS = {
     "default": ["000300.SH", "000905.SH", "399006.SZ", "399324.SZ"],
 }
 
+# 动态生成型池：值为 (生成函数名, 参数)
+_DYNAMIC_POOLS = {"个股动量": ("index_stock_cons_sample", 20)}
+
+
+def _z6(c) -> str:
+    return str(c).zfill(6)
+
+
+def fetch_index_cons_sample(index_code: str = "000300", n: int = 20) -> list:
+    """拉取指数成分股并等距抽样生成个股池（用于横截面个股动量等策略）。"""
+    import akshare as ak
+    symbol = index_code.split(".")[0]
+    cons = ak.index_stock_cons_csindex(symbol=symbol)
+    raw = list(cons["成分券代码"])
+    step = max(1, len(raw) // max(n, 1))
+    sel = raw[::step][:max(n, 1)]
+    out = []
+    for c in sel:
+        c6 = _z6(c)
+        suffix = ".SH" if c6.startswith(("6", "9", "68")) else ".SZ"
+        out.append(c6 + suffix)
+    return out
+
 
 def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     """统一为 date/open/high/low/close/volume 标准列。"""

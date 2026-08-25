@@ -1,6 +1,7 @@
 """回测引擎：在面板上逐日推进，调用策略产出目标权重并再平衡。"""
 from typing import Callable, Dict, Optional
 
+import numpy as np
 import pandas as pd
 
 from .account import PortfolioAccount
@@ -40,30 +41,61 @@ class BacktestEngine:
     def __init__(self, panel, factors: Dict[str, pd.DataFrame],
                  strategy, cost: dict = None, init_cash=1_000_000.0,
                  benchmark=None, benchmark_yoy=0.0,
-                 timing=None, timing_window=20, timing_scale_off=0.3):
+                 timing=None, timing_window=20, timing_scale_off=0.3,
+                 benchmark_high=None, benchmark_low=None):
         self.panel = panel
         self.factors = factors
         self.strategy = strategy
         self.acc = PortfolioAccount(init_cash, cost or {})
         self.benchmark = benchmark    # Series(date→close) 基准收盘
         self.benchmark_yoy = benchmark_yoy
-        # 大盘择时：None 关闭；"ma20" 用基准收盘与 MA20 的相对位置
+        # 大盘择时：None 关闭；"ma20"/"abs_mom"/"rsrs"（RSRS 需基准高低价）
         self.timing = timing
         self.timing_window = timing_window
         self.timing_scale_off = timing_scale_off
         self._timing_ma = None
         self._timing_mom = None
+        self._timing_rsrs = None
         if timing and benchmark is not None and len(benchmark) > timing_window:
             bc = benchmark.dropna()
             if timing == "ma20":
                 self._timing_ma = bc.rolling(timing_window).mean()
             elif timing == "abs_mom":
                 self._timing_mom = bc / bc.shift(timing_window) - 1
+            elif timing == "rsrs":
+                self._timing_rsrs = self._build_rsrs(
+                    benchmark, benchmark_high, benchmark_low, timing_window)
+
+    def _build_rsrs(self, close, high, low, window):
+        """构建 RSRS 标准分（光大经典）：N日高低价 OLS 斜率 → z-score。"""
+        if high is None or low is None:
+            return None
+        bh = high.dropna()
+        bl = low.dropna()
+        if len(bh) < window + 2:
+            return None
+        hi = bh.values
+        lo = bl.values
+        N = max(5, min(window, len(bh) - 2))
+        beta = [np.nan] * len(bh)
+        for i in range(N, len(bh)):
+            beta[i] = np.polyfit(lo[i - N: i], hi[i - N: i], 1)[0]
+        alpha = pd.Series(beta, index=bh.index)
+        M = max(N * 2, 20)
+        z = (alpha - alpha.rolling(M).mean()) / alpha.rolling(M).std()
+        return z
 
     def _timing_scale(self, date) -> float:
         """大盘择时仓位系数：满仓 1.0；弱势按 timing_scale_off 减仓。"""
-        if self._timing_ma is None and self._timing_mom is None:
+        if (self._timing_ma is None and self._timing_mom is None
+                and self._timing_rsrs is None):
             return 1.0
+        if self._timing_rsrs is not None:
+            z = self._timing_rsrs.get(date)
+            if z is None or z != z:
+                return 1.0
+            # RSRS 标准分 > 0 视为趋势健康，满仓；否则减仓
+            return 1.0 if z > 0 else self.timing_scale_off
         if self._timing_ma is not None:
             c = self._timing_ma.get(date)
             if c is None or c != c:      # 无数据/NA 不择时

@@ -42,9 +42,17 @@ header .ver{font-size:12px;background:rgba(255,255,255,.15);padding:4px 10px;bor
 <div class="wrap">
   <div class="panel">
     <div class="controls">
+      <div class="field"><label>推荐池(选择后自动填充)</label><select id="pool"><option value="">自定义代码</option></select></div>
       <div class="field wide"><label>标的代码（逗号分隔，指数/个股均可）</label>
         <input id="codes" value="000300.SH,399006.SZ,399324.SZ,000905.SH"></div>
       <div class="field"><label>策略</label><select id="strategy"></select></div>
+      <div class="field"><label>大盘择时</label>
+        <select id="timing">
+          <option value="">无</option>
+          <option value="ma20">MA20</option>
+          <option value="abs_mom">绝对动量</option>
+          <option value="rsrs">RSRS</option>
+        </select></div>
       <div class="field"><label>起始</label><input id="start" placeholder="YYYYMMDD" value="20150101"></div>
       <div class="field"><label>结束</label><input id="end" placeholder="YYYYMMDD" value="20241231"></div>
       <div class="field"><label>持仓数 TopK</label><input id="topk" type="number" value="3" style="width:80px"></div>
@@ -67,11 +75,16 @@ header .ver{font-size:12px;background:rgba(255,255,255,.15);padding:4px 10px;bor
 const $=id=>document.getElementById(id);
 async function loadStrategies(){const r=await fetch('/api/strategies');const j=await r.json();
   const s=$('strategy');s.innerHTML=j.strategies.map(n=>`<option>${n}</option>`).join('');}
+async function loadPools(){const r=await fetch('/api/pools');const j=await r.json();
+  const sel=$('pool');sel.innerHTML='<option value="">自定义代码</option>'+j.pools.map(p=>`<option value="${p.name}">${p.name} (${p.codes.length})</option>`).join('');
+  sel.onchange=function(){if(this.value){const p=j.pools.find(x=>x.name===this.value);if(p)$('codes').value=p.codes.join(',');}};}
+function setPreset(strategy,timing,topk,rebal){$('strategy').value=strategy;$('timing').value=timing||'';$('topk').value=topk;$('rebalance').value=rebal;}
 async function runBacktest(){
   const btn=$('run');btn.disabled=true;document.querySelector('.wrap').classList.add('loading');
   $('msg').textContent='回测中，请稍候…';
   const q=new URLSearchParams();q.set('codes',$('codes').value);q.set('strategy',$('strategy').value);
   q.set('start',$('start').value);q.set('end',$('end').value);q.set('topk',$('topk').value);q.set('rebalance',$('rebalance').value);
+  const tm=$('timing').value;if(tm)q.set('timing',tm);
   try{
     const r=await fetch('/api/backtest?'+q.toString(),{method:'POST'});const j=await r.json();
     if(j.error){$('msg').textContent='错误：'+j.message;return;}
@@ -103,7 +116,15 @@ function render(d){
     yAxis:{type:'category',data:top},visualMap:{min:0,max:1,show:false},
     series:[{type:'heatmap',data:hd.map(function(h,i){return top.map(function(c,j){return [i,j,hdata[i][j]];});}).flat()}]});
 }
-loadStrategies();$('run').onclick=runBacktest;runBacktest();
+loadStrategies();
+loadPools().then(function(){
+  // 默认一键: 个股动量 + MA20 择时
+  $('pool').value='个股动量';
+  const evt=document.createEvent('Event');evt.initEvent('change',true,true);$('pool').dispatchEvent(evt);
+  setPreset('momentum','ma20',5,21);
+  $('start').value='20190101';$('end').value='20251231';
+});
+$('run').onclick=runBacktest;setTimeout(function(){runBacktest();},1200);
 </script>
 </body>
 </html>

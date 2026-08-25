@@ -9,7 +9,8 @@ from .strategies.registry import create_strategy
 from .backtest.engine import BacktestEngine
 from .analysis.report import run_report, render_dashboard
 
-DEFAULT_FACTORS = ["rsi", "macd_hist", "bias20", "sma_gap", "momentum20", "vol_ratio"]
+DEFAULT_FACTORS = ["rsi", "macd_hist", "bias20", "sma_gap", "momentum20",
+                   "vol_ratio", "zt_daily", "lianban"]
 
 
 def run_backtest(
@@ -45,11 +46,13 @@ def run_backtest(
     dict: {result(BacktestResult), metrics, equity, html, meta}
     """
     cost = cost or backtest_config(init_cash=init_cash)
-    # 若指定推荐池名称，用其替换/兜底标的列表
+    # 若指定推荐池名称，用其替换/兜底标的列表（支持动态生成型个股池）
     if pool:
-        from .dataprovider.store import RECOMMENDED_POOLS
+        from .dataprovider.store import RECOMMENDED_POOLS, fetch_index_cons_sample
         if pool in RECOMMENDED_POOLS:
             codes = list(RECOMMENDED_POOLS[pool])
+        elif pool == "个股动量":
+            codes = fetch_index_cons_sample(n=20)
     store = DataStore(
         index_dir=str(DEFAULT_CONFIG.index_dir) if data_root is None else str(data_root / "indexes"),
         stock_dir=str(DEFAULT_CONFIG.stock_dir) if data_root is None else str(data_root / "stocks"),
@@ -77,6 +80,8 @@ def run_backtest(
         panel, factors, strat, cost=cost, init_cash=init_cash,
         benchmark=bench_close, timing=timing, timing_window=timing_window,
         timing_scale_off=timing_scale_off,
+        benchmark_high=bench_df["high"].reindex(panel.dates) if "high" in bench_df else None,
+        benchmark_low=bench_df["low"].reindex(panel.dates) if "low" in bench_df else None,
     )
     result = engine.run()
 

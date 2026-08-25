@@ -14,6 +14,8 @@ _NEED_FIELDS = {
     "boll_pos": ["close"],
     "momentum20": ["close"],
     "vol_ratio": ["volume"],
+    "zt_daily": ["close"],
+    "lianban": ["close"],
 }
 
 
